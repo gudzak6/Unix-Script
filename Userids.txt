@@ -1,0 +1,186 @@
+#!/bin/bash
+# Authors: Joey Gudzak & Jack Olszewski & Devin Bourne
+# names2userids: Script to create unique userids from a list of user names
+# CS 370
+
+usage () {
+        cat << END
+
+        $0: Take a "lastname, firstname" file as input and generate userids
+
+        Usage: $0 [ option ] [ filename ]
+
+        Options:
+                -h Display help
+END
+}
+if [ $# -eq 0 ]; then
+        usage
+elif [ "$1" = "-h" ]; then
+        usage
+else
+
+# checkDuplicate function checks for duplicates
+# and appends numbers to duplicates.
+# userids are kept to a max of 8 characters
+checkDuplicate () {
+  num=$1                                       # Variable "num" equals argument
+  if grep -w $line$num ids.2nd > /dev/null; then # if duplicate is found with "num"
+    num=$(( $num + 1 ))                          # "num" increments
+    if [ $num -gt 9 ]; then                      # if "num" has 2 digits
+      line=${line:0:6}                           # shorten "line" to 6 characters
+    fi
+    checkDuplicate $num   # Check for duplicate with "num"
+  else                    # if duplicate is not found
+    line=$line$num        # Append "num" to "userid"
+  fi
+}
+
+inputfile=$1
+numlines=$(wc -l $inputfile | awk -F " " '{ print $1 }')
+
+
+# 0. Remove any temporary files from previous runs of the script.
+#    This is essential during script testing.
+rm ids.1st 2> /dev/null
+rm ids.final 2> /dev/null
+rm ids.2nd 2> /dev/null
+
+linenum=0
+while read line; do     # read input from file line by line
+# 1. Create firstn from $inputfile
+        firstn=$(                               # get firstn with command substitution
+                echo $line |                    # echo line for input to awk
+                awk -F ", " '{ print $NF }' |   # Prints last field (first name)
+                cut -c1                         # cuts first initial
+        )
+
+# 2. Create lastname from $inputfile with all special characters removed
+        lastname=$(                             # get lastname with command substitution
+                echo $line |                    # echo line for input to awk
+                awk -F ", " '{ print $1 }' |    # Prints first field (last name)
+                sed -e 's/[^a-zA-Z]//g' |       # remove special characters
+                cut -c1-7                         # cuts first seven letters
+        )
+
+# 3. Create first draft userids file from firstn and lastname > ids.1st'.
+#    It contains userids in this format:
+#
+#     jabraham
+#     tabraham
+#     jabraham
+#     jabrams
+#     dabrams
+#     jabrams
+#
+# We want to keep the ids.1st file in the same order as $inputfile
+# since we want to be able to paste the ids file and $inputfile
+# together at some point, like this (after duplicate ids have been
+# dealt with):
+#
+#     Abraham, Jesse :jabraha1
+#     Abrahamsen, Theresa :tabraham
+#     Abrahamson, Jonathan :jabraha2
+#     Abrams, Jenelle :jabrams1
+#     Abrams, Dana :dabrams
+#     Abrams, Jessica :jabrams2
+
+        clear                                     #
+        linenum=$[$linenum+1]                     ###
+        echo Creating ids.1st                     ##### Progress output
+        echo Lines Processed: $linenum/$numlines  ###
+        echo Progress: $[100*$linenum/$numlines]% #
+        userid=$(echo $firstn$lastname | tr '[:upper:]' '[:lower:]')
+
+        echo $userid >> ids.1st
+done < $inputfile
+
+# 4. Create list of the duplicated ids in ids.1st > duplids'.
+#    We'll use duplids as a lookup table.  A portion of duplids is
+#    shown below:
+#
+#     jabraham
+#     tabraham
+#     jabrams
+#     dabrams
+sort ids.1st | uniq -d > duplids
+
+
+# 5. Append userids from ids.1st to ids.2nd.
+#    If a userid is duplicated, attach appropriate numbers to them
+#    and append to ids.2nd.
+linenum=0
+while read line; do     # read input from inputfile line by line
+
+clear                                         #
+linenum=$[$linenum+1]                         ###
+echo Creating ids.2nd and Fixing Duplicates   ##### Progress output
+echo Lines Processed: $linenum/$numlines      ###
+echo Progress: $[100*$linenum/$numlines]%     #
+
+  if grep -w $line duplids > /dev/null; then # if userid is a duplicate
+    checkDuplicate 1                         # Find duplicate extent
+    echo $line >> ids.2nd
+  else
+    echo $line >> ids.2nd
+  fi
+
+done < ids.1st
+#           e.g.  echo $userid >> ids.2nd
+#
+#    Here, grep is your friend. But, be sure to do WHOLE WORD grep.
+#
+#           e.g.  grep -w $userid duplids
+#
+#    For each userid in ids.1st,
+#       grep for the userid in duplids from Step 4.
+#
+#       If grep didn't find the userid in duplids, it's unique, so
+#           just append it straightaway to ids.2nd
+#
+#       Else, (if grep did find the userid in duplids)
+#           attach a number to the userid starting at number=1, making
+#           sure the userid remains no more than 8 chars.
+#
+#           grep for the numbered userid in ids.2nd.
+#
+#           If grep finds that the numbered userid is already in
+#           ids.2nd, increment the number by 1, and grep for the new
+#           numbered userid in ids.2nd.  REPEAT until grep does not
+#           find the numbered userid in ids.2nd.
+#
+#           Append the numbered userid to ids.2nd.
+#       End If
+#
+#
+# After this, ids.2nd will look like this (the original order of
+# ids.1st is preserved):
+#
+#     jabraha1
+#     tabraham
+#     jabraha2
+#     jabrams1
+#     dabrams
+#     jabrams2
+
+
+
+
+
+
+
+# 6. Double check ids.2nd for any userid duplications.
+#    The same uniq option used to create duplids (step 4) should
+#    work.
+
+echo Double check duplicates
+sort ids.2nd | uniq -d
+
+
+
+# 7. Paste ids.2nd to $inputfile > ids.final
+echo Pasting ids.2nd and the inputfile
+paste -d : $inputfile ids.2nd > ids.final
+fi
+
+echo process complete
